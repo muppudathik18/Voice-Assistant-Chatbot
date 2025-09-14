@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f4f4f4;
+            margin: 0;
+        }
+        .chat-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message {
+            padding: 8px 12px;
+            border-radius: 5px;
+            max-width: 80%;
+        }
+        .user-message {
+            background-color: #e0f7fa;
+            align-self: flex-end;
+        }
+        .bot-message {
+            background-color: #f0f0f0;
+            align-self: flex-start;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #333;
+        }
+        audio {
+            width: 100%;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container" id="chat-history">
+        <div class="bot-message message">Hello! How can I help you today?</div>
+    </div>
+    <div class="controls">
+        <button id="micButton">Start Recording</button>
+        <button id="stopButton" disabled>Stop Recording</button>
+    </div>
+    <div id="status">Ready</div>
+    <audio id="audioPlayback" controls autoplay></audio>
+
+    <script>
+        const micButton = document.getElementById('micButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDiv = document.getElementById('status');
+        const audioPlayback = document.getElementById('audioPlayback');
+        const chatHistory = document.getElementById('chat-history');
+
+        let mediaRecorder;
+        let audioChunks = [];
+        let sessionId = 'session_' + Date.now(); // Simple session ID for now
+
+        function addMessage(sender, text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            messageDiv.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
+            messageDiv.textContent = text;
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight; // Scroll to bottom
+        }
+
+        micButton.onclick = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioFile = new File([audioBlob], 'user_audio.webm', { type: 'audio/webm' });
+
+                    statusDiv.textContent = 'Sending audio...';
+                    micButton.disabled = true;
+                    stopButton.disabled = true;
+
+                    const formData = new FormData();
+                    formData.append('audio_file', audioFile);
+                    formData.append('session_id', sessionId);
+
+                    try {
+                        const response = await fetch('/voice_chat', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (response.ok) {
+                            statusDiv.textContent = 'Playing response...';
+                            const audioBlob = await response.blob();
+                            const audioUrl = URL.createObjectURL(audioBlob);
+                            audioPlayback.src = audioUrl;
+                            audioPlayback.play();
+
+                            // For a full voice chatbot, you'd also get the text back
+                            // and display it. For simplicity, we're just playing audio.
+                            // If you want text, the /voice_chat endpoint needs to return JSON
+                            // with text and a URL to the audio, or stream audio and then send text via WebSocket.
+                            // For now, we'll just play the audio.
+                            statusDiv.textContent = 'Ready';
+                        } else {
+                            const errorText = await response.text();
+                            statusDiv.textContent = `Error: ${response.status} - ${errorText}`;
+                        }
+                    } catch (error) {
+                        statusDiv.textContent = `Network Error: ${error}`;
+                    } finally {
+                        micButton.disabled = false;
+                        stopButton.disabled = true;
+                    }
+                };
+
+                mediaRecorder.start();
+                statusDiv.textContent = 'Recording...';
+                micButton.disabled = true;
+                stopButton.disabled = false;
+
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                statusDiv.textContent = 'Error: Microphone access denied or failed.';
+                micButton.disabled = false;
+                stopButton.disabled = true;
+            }
+        };
+
+        stopButton.onclick = () => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                statusDiv.textContent = 'Stopping recording...';
+                micButton.disabled = true;
+                stopButton.disabled = true;
+            }
+        };
+
+        audioPlayback.onended = () => {
+            statusDiv.textContent = 'Ready';
+            micButton.disabled = false;
+        };
+
+        // Initial check for microphone access
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(() => statusDiv.textContent = 'Ready (Microphone OK)')
+            .catch(() => {
+                statusDiv.textContent = 'Microphone access denied. Please enable it.';
+                micButton.disabled = true;
+            });
+
+    </script>
+</body>
+</html>

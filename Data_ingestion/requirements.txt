@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+openai
+pinecone
+beautifulsoup4
+requests
+python-dotenv
+langchain-text-splitters
+python-dateutil
+numpy
