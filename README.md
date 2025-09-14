@@ -1,162 +1,255 @@
 # 🎙️ Voice Assistant Chatbot
 
-The **Voice Assistant Chatbot** is a **speech-enabled conversational assistant** that lets users **talk naturally** with a chatbot.  
-It uses **Large Language Models (LLMs)** for intelligent responses, integrates with **LangGraph** to structure conversation flows, and supports **speech-to-text** and **text-to-speech** for voice interaction.
+The **Voice Assistant Chatbot** is a speech-enabled assistant that supports **voice input (STT)** and **voice output (TTS)**, leverages **Large Language Models (LLMs)** for intelligent responses and appointment booking, and uses **LangGraph** to structure conversation flows. The project is split into two main services contained in this repository:
 
-This project is designed to be **developer-friendly** for extending and customizing, while also providing a **smooth end-user experience**.
-
----
-
-## 🚀 Features
-
-- 🎤 **Voice Input/Output** – Speak to the chatbot and get spoken replies.
-- 🧠 **LLM-Powered Responses** – Leverages large language models for natural conversations.
-- 🔄 **LangGraph Flow** – Organizes conversations into states, nodes, and transitions.
-- 💾 **Database Support** – Includes a CRUD layer for persistent data storage.
-- 🐳 **Dockerized** – One-command deployment using Docker.
-- ⚡ **Modular & Extensible** – Add new nodes, prompts, or integrations easily.
+- `Chatbot/` — the core assistant (LLM integration, LangGraph flows, runtime)
+- `Data_ingestion/` — an ingestion service to scrape web pages, chunk documents, create embeddings, and persist vectors to a vector DB (e.g., Pinecone)
 
 ---
 
-## 📂 Project Structure
+## ✅ High-level Features
+
+- Voice-based Q&A and interactions
+- Appointment booking with sales and service agents by checking their availability
+- Modular LLM prompt & helper layer
+- LangGraph-based conversational flow (nodes, graph, state)
+- Data ingestion pipeline (web scraper → text splitter → embeddings → Pinecone)
+- SQLite-based lightweight bookkeeping for scraped pages
+- Docker-friendly setup for reproducible deployments
+
+---
+
+## 📂 Full Project Structure (accurate to repo root)
 
 ```
 Voice_Assistant_Chatbot/
-│── Chatbot/
-│   ├── main.py               # Entry point for running the chatbot
-│   ├── config.py             # Central configuration (keys, env settings, etc.)
-│   ├── requirements.txt      # Python dependencies
-│   ├── Dockerfile            # Containerization instructions
-│   │
-│   ├── database/             # Database layer
-│   │   ├── crud.py           # Create, Read, Update, Delete operations
-│   │   └── __init__.py
-│   │
-│   ├── langgraph_flow/       # Conversational graph logic
-│   │   ├── graph.py          # Defines the graph of interactions
-│   │   ├── nodes.py          # Defines conversation nodes
-│   │   ├── state.py          # Conversation state handling
-│   │   └── __init__.py
-│   │
-│   └── llm/                  # LLM-related utilities
-│       ├── helper.py         # Helper functions for LLM integration
-│       ├── prompts.py        # Predefined prompts
-│       └── __init__.py
+├── Chatbot/
+│   ├── main.py
+│   ├── config.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   ├── database/
+│   │   └── crud.py
+│   ├── langgraph_flow/
+│   │   ├── graph.py
+│   │   ├── nodes.py
+│   │   └── state.py
+│   └── llm/
+│       ├── helper.py
+│       └── prompts.py
+│
+├── Data_ingestion/
+│   ├── main.py                  # FastAPI ingestion service (endpoints + ingestion cycle)
+│   ├── config.py                # ENV-driven configuration (Pinecone keys, URL, DB file)
+│   ├── requirements.txt
+│   ├── database/
+│   │   └── crud.py              # sqlite bookkeeping: scraped_pages table, get/save methods
+│   ├── scraper/
+│   │   └── core.py              # page scraping + text cleaning + splitting
+│   └── vector_db/
+│       └── pinecone_client.py   # embedding creation and upsert to Pinecone
+│
+└── README.md                    # <-- this file
 ```
 
 ---
 
-## 🛠️ Installation & Setup (Developer Guide)
+## 🛠️ Developer Setup (both services)
 
-### 🔧 Prerequisites
+### Prerequisites
 
-- Python **3.9+**
-- [pip](https://pip.pypa.io/en/stable/) (Python package manager)
-- (Optional) [Docker](https://www.docker.com/)
-- An API key for your preferred **LLM provider** (set inside `config.py` or via environment variables)
+- Python 3.10+
+- pip
+- (Optional) Docker
+- `.env` with API keys if using external services (OpenAI, Pinecone)
 
----
+### Example `.env` (Data_ingestion/.env)
 
-### 1. Clone the Repository
+```
+OPENAI_API_KEY=sk-...
+PINECONE_API_KEY=pc-...
+PINECONE_ENVIRONMENT=...
+DB_FILE=/tmp/ingestion_db.db
+```
+
+Place `.env` in the `Data_ingestion/` directory (or set environment variables accordingly).
+
+### Install dependencies per service
 
 ```bash
-git clone <your-repo-url>
+# For Chatbot
 cd Voice_Assistant_Chatbot/Chatbot
-```
-
-### 2. Create & Activate Virtual Environment
-
-```bash
 python -m venv venv
-source venv/bin/activate   # Linux/Mac
-venv\Scripts\activate    # Windows
-```
+source venv/bin/activate
+pip install -r requirements.txt
 
-### 3. Install Dependencies
-
-```bash
+# For Data_ingestion
+cd ../Data_ingestion
+python -m venv venv-ingest
+source venv-ingest/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment
+---
 
-- Open `config.py` and set:
-  - **API Keys** (e.g., OpenAI, Hugging Face, or other LLMs)
-  - **Database settings**
-  - Any other custom configuration
+## ▶️ Running the Data Ingestion Service (developer)
 
-### 5. Run the Chatbot
+There are two ways to run the ingestion service:
+
+**1) Quick-run (python)**
 
 ```bash
+cd Voice_Assistant_Chatbot/Data_ingestion
 python main.py
+# main.py runs a FastAPI app and will call uvicorn internally when executed directly.
 ```
 
+**2) Run with Uvicorn (recommended during development)**
+
+```bash
+cd Voice_Assistant_Chatbot/Data_ingestion
+uvicorn main:app --host 0.0.0.0 --port 8080 --reload
+```
+
+**Endpoints**
+
+- `GET /ingest` — triggers a full ingestion cycle (scrape → chunk → embed → upsert)
+- `GET /health` — returns health status and whether Pinecone index connection exists
+
 ---
 
-## 🐳 Running with Docker
+## 🔁 Data Ingestion Code Flow (detailed)
 
-1. Build the Docker image:
+This describes how the ingestion pipeline moves data from a website into the vector DB. File references below point to the `Data_ingestion/` module.
 
+### 1. Entry point: `main.py`
+
+- `perform_ingestion_cycle()` is the core orchestrator. It:
+
+  1. reads target URLs (by default `DEALERSHIP_URL` from `config.py`),
+  2. for each URL checks the last scraped timestamp using `database.crud.get_last_scraped_time(url)`,
+  3. skips scraping if the page was scraped recently (controlled by `INGESTION_INTERVAL_MINUTES`),
+  4. calls `scraper.core.scrape_page(url)` to obtain cleaned text,
+  5. splits the text into manageable chunks (size/overlap can be adjusted inside `scraper.core`),
+  6. calls `vector_db.pinecone_client.upsert_vectors_to_pinecone(url, chunks)` to embed & upsert vectors,
+  7. saves or updates bookkeeping via `database.crud.save_scraped_page(url, raw_text)`.
+
+- The FastAPI endpoint `GET /ingest` invokes `perform_ingestion_cycle()` so you can trigger ingestion on-demand or via a scheduler/hook.
+
+### 2. Scraper: `scraper/core.py`
+
+- `scrape_page(url: str) -> str`:
+  - Uses `requests` to fetch HTML and `BeautifulSoup` to extract visible text (removes `<script>`, `<style>`, `<nav>`, `<footer>`, `<header>`, etc.).
+  - Cleans whitespace and filters out very short text fragments.
+  - Uses `RecursiveCharacterTextSplitter` (from `langchain_text_splitters`) to chunk the document into smaller texts suitable for embedding.
+  - Returns a list of text chunks (or raw text plus a chunk list depending on your configuration).
+
+**Tip:** Tweak chunk size / overlap in `scraper/core.py` for downstream retrieval accuracy and cost tradeoffs.
+
+### 3. Vector DB client: `vector_db/pinecone_client.py`
+
+- `embed_text(text: str) -> List[float]`:
+  - Calls your embedding model (OpenAI/other) to convert a text chunk into a numeric vector.
+- `upsert_vectors_to_pinecone(url: str, chunks: List[str])`:
+  - Initializes Pinecone client and index (if not already connected).
+  - Deletes previous vectors for the same source (by filtering `{"source": url}`) to avoid duplicates.
+  - Batches embeddings (recommended batch size 100) and calls `pinecone_index.upsert(vectors=...)` with metadata including source, chunk index and optionally the chunk text.
+  - Metadata enables traceability and simpler retrieval later.
+
+### 4. Database bookkeeping: `database/crud.py`
+
+- Uses SQLite to store the table `scraped_pages(url, raw_text, scraped_at)`.
+- `setup_db()` ensures table exists on startup.
+- `get_last_scraped_time(url)` returns the last `scraped_at` timestamp for skipping re-scraping.
+- `save_scraped_page(url, raw_text)` upserts the latest raw_text and timestamp for the URL.
+
+---
+
+## 🧪 Testing the pipeline locally
+
+1. Ensure `.env` is set with a working OpenAI API key and Pinecone keys (or mock/embed logic for offline testing).
+2. Start the ingestion service:
    ```bash
-   docker build -t voice-assistant-chatbot .
+   cd Data_ingestion
+   python main.py
    ```
-
-2. Run the container:
+3. Trigger ingestion (in a browser or curl):
    ```bash
-   docker run -it --rm voice-assistant-chatbot
+   curl http://localhost:8080/ingest
    ```
-
-This ensures your app runs in a clean, reproducible environment.
-
----
-
-## 🎙️ User Guide
-
-1. Start the chatbot using Python or Docker.
-2. Press the **microphone button** to begin recording your query.
-3. Speak naturally – the chatbot transcribes your voice, processes it, and generates a response.
-4. The assistant **speaks the answer back to you**, making it fully hands-free.
-5. Example use cases:
-   - Ask general knowledge questions
-   - Get help with tasks or reminders
-   - Use as a conversational companion
+4. Check logs for progress messages such as `Ingestion Service: Upserted ... vectors` or DB writes.
 
 ---
 
-## ⚙️ Developer Notes
+## 🛠️ Developer Notes & Extension Points (where to modify)
 
-- **Add New Nodes** → Extend `langgraph_flow/nodes.py`.
-- **Modify Conversation Flow** → Adjust `graph.py` and `state.py`.
-- **Custom Prompts** → Edit `llm/prompts.py`.
-- **Database Integrations** → Extend `database/crud.py` for more complex logic.
-- **Configurable Settings** → Centralized in `config.py` for easy management.
-
----
-
-## 🛠️ Troubleshooting
-
-- **Dependencies not installing?**  
-  Make sure you’re using Python 3.9+ and have upgraded pip:
-  ```bash
-  pip install --upgrade pip
-  ```
-- **LLM not responding?**  
-  Check your API key in `config.py` or environment variables.
-- **Docker build failing?**  
-  Make sure Docker is running and you have internet connectivity.
+- Add more target URLs: Modify `main.py` to loop over a list of URLs or read from a database/CSV.
+- Fine-tune chunking: `scraper/core.py` uses `RecursiveCharacterTextSplitter` — change `chunk_size` and `chunk_overlap` to tune performance & recall.
+- Swap embeddings provider: `vector_db/pinecone_client.py` currently uses OpenAI client for embeddings; swap with another provider if needed.
+- Vector index choices: Pinecone is implemented as an example — replace with FAISS/Weaviate/Vectara as needed.
+- Add authentication: Protect `/ingest` endpoint via API key or other auth mechanism if exposing publicly.
 
 ---
 
-## 🤝 Contributing
+## Chatbot Code Flow
 
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature-name`)
-3. Commit changes (`git commit -m "Added new feature"`)
-4. Push to branch (`git push origin feature-name`)
-5. Create a Pull Request
+The chatbot is orchestrated using **LangGraph** with a workflow of connected nodes. Each user query (text or voice) passes through the following steps:
+
+1. **User Input**
+
+   - Text via `/chat` endpoint.
+   - Voice via `/voice_chat` → audio is transcribed to text.
+
+2. **Node: `node_rephrase_query`**
+
+   - Rewrites the user query into a standalone form (resolves pronouns and incomplete references).
+   - Uses recent conversation history for context.
+
+3. **Node: `node_classify_intent`**
+
+   - Classifies the rewritten query into one of three intents:
+     - **RAG** → factual question requiring document retrieval.
+     - **APPOINTMENT** → booking or availability request.
+     - **CHAT** → general small talk or casual conversation.
+   - If intent is `APPOINTMENT`, also extracts appointment details (customer name, date/time, duration, type of service).
+
+4. **Branching by Intent**
+
+   - **RAG**
+     - Calls `rag/retrieval.py` to embed the query and fetch top-k matching chunks from Pinecone.
+     - Constructs context from retrieved chunks.
+     - Calls the LLM with system + context + query → returns a grounded answer.
+   - **APPOINTMENT**
+     - Validates parsed details (time, customer name, duration).
+     - Checks availability with database (`crud.py`).
+     - If slot is free → creates appointment and confirms.
+     - If missing/invalid info → asks clarifying question via LLM.
+   - **CHAT**
+     - Uses a lightweight chitchat system prompt.
+     - Generates natural, conversational responses with no retrieval.
+
+5. **Node: `node_update_history`**
+
+   - Saves the assistant’s reply in the conversation history (SQLite).
+   - Ensures continuity across multiple turns.
+
+6. **Output**
+   - Final assistant text response returned to client.
+   - For `/voice_chat`, the text is also synthesized into speech and returned as audio.
 
 ---
 
-## 📜 License
+**Summary:**  
+The chatbot pipeline is:
 
-This project is open-source under the **MIT License**.
+`User Query → Rephrase → Classify Intent → (RAG | Appointment | Chat) → Update History → Response`
+
+---
+
+## ⚙️ Troubleshooting
+
+- **Missing API keys / 401s:** Confirm `.env` variables are loaded and correct. `Data_ingestion/config.py` uses `dotenv.load_dotenv()`.
+- **Pinecone errors:** Ensure the index exists in Pinecone console and `PINECONE_ENVIRONMENT` is correct.
+- **No text found after scraping:** The scraper intentionally removes non-visible elements. Inspect `scraper/core.py` and try fetching the URL in a browser to see if content is rendered via JS (requires headless browser scraping if so).
+
+---
